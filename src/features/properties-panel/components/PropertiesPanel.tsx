@@ -64,7 +64,7 @@ export function PropertiesPanel() {
   if (!isDrawingTool && (selectedIds.length === 0 || isOnlyImages)) return null
 
   return (
-    <div className="pointer-events-auto flex w-56 flex-col gap-3 rounded-xl bg-white p-3 shadow-panel">
+    <div className="pointer-events-auto flex w-56 max-w-full flex-col gap-3 overflow-y-auto rounded-xl bg-white p-3 shadow-panel [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ maxHeight: 'calc(100dvh - 6rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))' }}>
       <ColorPicker
         label="Stroke"
         value={currentStyle.strokeColor}

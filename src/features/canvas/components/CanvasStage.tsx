@@ -7,7 +7,9 @@ import type { TextElement, WhiteboardElement } from '@/features/elements/types'
 import { SelectionOverlay } from '@/features/selection/components/SelectionOverlay'
 import { DRAW_TOOLS, toolRegistry } from '@/features/tools/toolRegistry'
 import type { DragState, ToolContext } from '@/features/tools/types'
+import { MAX_ZOOM, MIN_ZOOM } from '@/shared/constants'
 import type { Point } from '@/shared/types/common'
+import { clamp } from '@/shared/utils'
 import { useWhiteboardStore } from '@/store'
 
 import { getPointerScreenPoint, screenToWorld } from '../utils/coordinateTransform'
@@ -17,6 +19,19 @@ import { InteractionLayer } from './InteractionLayer'
 import { StatusBar } from './StatusBar'
 import { TextEditorOverlay } from './TextEditorOverlay'
 import { ZoomControls } from './ZoomControls'
+
+interface PinchState {
+  distance: number
+  midpoint: Point
+}
+
+function computePinchState(points: Point[]): PinchState {
+  const [a, b] = points
+  return {
+    distance: Math.hypot(b.x - a.x, b.y - a.y),
+    midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+  }
+}
 
 const CURSOR_BY_TOOL: Record<string, string> = {
   select: 'default',
@@ -39,6 +54,9 @@ export function CanvasStage() {
   const dragRef = useRef<DragState | null>(null)
   const lastWorldPointRef = useRef<Point>({ x: 0, y: 0 })
   const redrawScheduledRef = useRef(false)
+  const activePointersRef = useRef<Map<number, Point>>(new Map())
+  const pinchStateRef = useRef<PinchState | null>(null)
+  const gestureModeRef = useRef<'none' | 'tool' | 'pinch'>('none')
 
   const [editingText, setEditingText] = useState<TextElement | null>(null)
   const activeTool = useWhiteboardStore((state) => state.activeTool)
@@ -141,37 +159,88 @@ export function CanvasStage() {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const screenPoint = getPointerScreenPoint(event, container)
-    const viewport = useWhiteboardStore.getState()
-    const worldPoint = screenToWorld(screenPoint, viewport)
-    lastWorldPointRef.current = worldPoint
-    toolRegistry[viewport.activeTool].onPointerDown(
-      buildCtx(worldPoint, screenPoint, event.shiftKey),
-    )
+    activePointersRef.current.set(event.pointerId, screenPoint)
+
+    // A second touch landing mid-gesture switches to pinch-zoom/pan; cleanly end
+    // whatever the first touch's tool was doing so it doesn't leave dangling drag state.
+    if (activePointersRef.current.size === 2 && gestureModeRef.current !== 'pinch') {
+      if (gestureModeRef.current === 'tool') {
+        const state = useWhiteboardStore.getState()
+        toolRegistry[state.activeTool].onPointerUp(
+          buildCtx(lastWorldPointRef.current, screenPoint, event.shiftKey),
+        )
+      }
+      gestureModeRef.current = 'pinch'
+      pinchStateRef.current = computePinchState([...activePointersRef.current.values()])
+      return
+    }
+
+    if (activePointersRef.current.size > 2) return
+
+    if (gestureModeRef.current === 'none') {
+      gestureModeRef.current = 'tool'
+      const viewport = useWhiteboardStore.getState()
+      const worldPoint = screenToWorld(screenPoint, viewport)
+      lastWorldPointRef.current = worldPoint
+      toolRegistry[viewport.activeTool].onPointerDown(
+        buildCtx(worldPoint, screenPoint, event.shiftKey),
+      )
+    }
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     const container = containerRef.current
     if (!container) return
+    if (!activePointersRef.current.has(event.pointerId)) return
     const screenPoint = getPointerScreenPoint(event, container)
-    const viewport = useWhiteboardStore.getState()
-    const worldPoint = screenToWorld(screenPoint, viewport)
-    lastWorldPointRef.current = worldPoint
-    toolRegistry[viewport.activeTool].onPointerMove(
-      buildCtx(worldPoint, screenPoint, event.shiftKey),
-    )
+    activePointersRef.current.set(event.pointerId, screenPoint)
+
+    if (gestureModeRef.current === 'pinch') {
+      if (activePointersRef.current.size < 2) return
+      const next = computePinchState([...activePointersRef.current.values()].slice(0, 2))
+      const prev = pinchStateRef.current
+      if (prev) {
+        const state = useWhiteboardStore.getState()
+        const nextZoom = clamp(state.zoom * (next.distance / prev.distance), MIN_ZOOM, MAX_ZOOM)
+        state.setZoomAtPoint(nextZoom, next.midpoint)
+        state.panBy(next.midpoint.x - prev.midpoint.x, next.midpoint.y - prev.midpoint.y)
+      }
+      pinchStateRef.current = next
+      return
+    }
+
+    if (gestureModeRef.current === 'tool') {
+      const viewport = useWhiteboardStore.getState()
+      const worldPoint = screenToWorld(screenPoint, viewport)
+      lastWorldPointRef.current = worldPoint
+      toolRegistry[viewport.activeTool].onPointerMove(
+        buildCtx(worldPoint, screenPoint, event.shiftKey),
+      )
+    }
   }
 
   function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
     const container = containerRef.current
     if (!container) return
-    const screenPoint = getPointerScreenPoint(event, container)
-    const state = useWhiteboardStore.getState()
-    const worldPoint = screenToWorld(screenPoint, state)
-    const tool = state.activeTool
-    toolRegistry[tool].onPointerUp(buildCtx(worldPoint, screenPoint, event.shiftKey))
+    activePointersRef.current.delete(event.pointerId)
 
-    if (DRAW_TOOLS.includes(tool) && !state.isToolLocked) {
-      state.setActiveTool('select')
+    if (gestureModeRef.current === 'pinch') {
+      if (activePointersRef.current.size < 2) pinchStateRef.current = null
+      if (activePointersRef.current.size === 0) gestureModeRef.current = 'none'
+      return
+    }
+
+    if (gestureModeRef.current === 'tool') {
+      const screenPoint = getPointerScreenPoint(event, container)
+      const state = useWhiteboardStore.getState()
+      const worldPoint = screenToWorld(screenPoint, state)
+      const tool = state.activeTool
+      toolRegistry[tool].onPointerUp(buildCtx(worldPoint, screenPoint, event.shiftKey))
+
+      if (DRAW_TOOLS.includes(tool) && !state.isToolLocked) {
+        state.setActiveTool('select')
+      }
+      gestureModeRef.current = 'none'
     }
   }
 
@@ -206,6 +275,7 @@ export function CanvasStage() {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
       <GridLayer />
       <CanvasLayer />
@@ -221,7 +291,13 @@ export function CanvasStage() {
         />
       )}
 
-      <div className="pointer-events-none absolute bottom-3 right-3">
+      <div
+        className="pointer-events-none absolute bottom-3 right-3"
+        style={{
+          bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+          right: 'calc(0.75rem + env(safe-area-inset-right))',
+        }}
+      >
         <ZoomControls />
       </div>
       <StatusBar />
