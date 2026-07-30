@@ -6,7 +6,13 @@ export function StatusBar() {
   const selectedCount = useWhiteboardStore((state) => state.selectedIds.length)
 
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 select-none rounded-lg bg-white/80 px-3 py-1.5 text-xs text-gray-500 shadow-panel backdrop-blur">
+    <div
+      className="pointer-events-none absolute bottom-3 left-3 select-none rounded-lg bg-white/80 px-3 py-1.5 text-xs text-gray-500 shadow-panel backdrop-blur"
+      style={{
+        bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+        left: 'calc(0.75rem + env(safe-area-inset-left))',
+      }}
+    >
       <span>{Math.round(zoom * 100)}% zoom</span>
       <span className="mx-2 text-gray-300">·</span>
       <span>
