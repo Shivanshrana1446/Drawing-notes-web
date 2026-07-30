@@ -56,7 +56,7 @@ export function Toolbar() {
   const canRedo = useWhiteboardStore((state) => state.future.length > 0)
 
   return (
-    <div className="pointer-events-auto flex items-center gap-0.5 rounded-xl bg-white px-1.5 py-1.5 shadow-panel">
+    <div className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl bg-white px-1.5 py-1.5 shadow-panel [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {TOOLS.map((tool) => (
         <Tooltip key={tool.type} label={`${tool.label} (${getShortcutLabel(tool.type)})`}>
           <IconButton
