@@ -18,6 +18,8 @@ interface ResizeHandlesProps {
 }
 
 const HANDLE_SIZE = 8
+/** Hit target is larger than the visible dot so handles are draggable on touchscreens. */
+const HANDLE_HIT_SIZE = 28
 
 const CURSOR_BY_HANDLE: Record<ResizeHandle, string> = {
   nw: 'nwse-resize',
@@ -72,14 +74,19 @@ export function ResizeHandles({ element, getContainerRect }: ResizeHandlesProps)
                   resizeLineEndpoint(element, index as 0 | 1, toWorld(event)),
                 )
               }}
-              className="pointer-events-auto absolute cursor-move rounded-full border-2 border-accent bg-white"
+              className="pointer-events-auto absolute flex cursor-move items-center justify-center"
               style={{
-                left: screenPoint.x - HANDLE_SIZE / 2,
-                top: screenPoint.y - HANDLE_SIZE / 2,
-                width: HANDLE_SIZE,
-                height: HANDLE_SIZE,
+                left: screenPoint.x - HANDLE_HIT_SIZE / 2,
+                top: screenPoint.y - HANDLE_HIT_SIZE / 2,
+                width: HANDLE_HIT_SIZE,
+                height: HANDLE_HIT_SIZE,
               }}
-            />
+            >
+              <div
+                className="rounded-full border-2 border-accent bg-white"
+                style={{ width: HANDLE_SIZE, height: HANDLE_SIZE }}
+              />
+            </div>
           )
         })}
       </>
@@ -118,15 +125,20 @@ export function ResizeHandles({ element, getContainerRect }: ResizeHandlesProps)
               if (event.buttons === 0) return
               updateElement(element.id, resizeBoxElement(boxElement, handle, toWorld(event)))
             }}
-            className="pointer-events-auto absolute border-2 border-accent bg-white"
+            className="pointer-events-auto absolute flex items-center justify-center"
             style={{
-              left: position.x - HANDLE_SIZE / 2,
-              top: position.y - HANDLE_SIZE / 2,
-              width: HANDLE_SIZE,
-              height: HANDLE_SIZE,
+              left: position.x - HANDLE_HIT_SIZE / 2,
+              top: position.y - HANDLE_HIT_SIZE / 2,
+              width: HANDLE_HIT_SIZE,
+              height: HANDLE_HIT_SIZE,
               cursor: CURSOR_BY_HANDLE[handle],
             }}
-          />
+          >
+            <div
+              className="border-2 border-accent bg-white"
+              style={{ width: HANDLE_SIZE, height: HANDLE_SIZE }}
+            />
+          </div>
         )
       })}
     </>
